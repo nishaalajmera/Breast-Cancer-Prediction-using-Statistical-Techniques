@@ -1,0 +1,371 @@
+---
+title: "Breast Cancer Prediction using Statistical Learning"
+author: "Nishaal Ajmera"
+date: "29/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+  
+# Introduction   
+Breast Cancer is the most prevalent cancer in women across the globe. This cancer begins when cancerous cells develop in the breast tissue forming a tumour. This tumour can be either benign where it will not spread or malignant where the cells can spread to other tissues.   
+In this project, "BreastCancer" data set is obtained from Wisconsin which contains 9 cytological characteristics of the tissue sample from 699 women.   
+The goals of this project are:  
+* to build a classifier for the "Class" benign or malignant of a tissue sample based the cytological characteristics  
+* to assess which cytological characteristics are most significant to classify the tissue samples
+
+## Data Mining 
+```{r Data packages,include=FALSE}
+#Loading important packages
+library(tidyverse)
+library(nclSLR)
+library(mlbench)  
+library(leaps)
+library(varhandle)
+library(bestglm)
+library(MASS)
+library(knitr)
+```
+```{r Data Mining,include=FALSE}
+#Data acquisition
+data(BreastCancer)
+## Check size 
+dim(BreastCancer)
+# Column names
+names(BreastCancer)
+
+```
+This data contains 699 rows, 9 predictor variables and 1 response variable `Class`
+
+## Data Wrangling 
+```{r Wrangling, include=FALSE}
+#convert to factors to quantitative variables
+class(BreastCancer$Class)
+typeof(BreastCancer$Class)
+head(BreastCancer$Class) #benign is the first level and malignant the second
+
+
+#convert factors to numeric variables without changing values, changing Class to integer vector with two levels, removing ID column
+MyData=data.frame(unfactor(BreastCancer[,2:10]),Class=as.integer(BreastCancer$Class)-1) 
+MyData=na.omit(MyData) #removing rows with NA values
+```
+```{r Wrangling 2, echo=FALSE}
+# Extract response variable:
+y=MyData[,10]
+# Extract the predictor variables:
+X1_raw= MyData[,1:9]
+#Standardise the predictor variables: 
+X1=scale(as.matrix(X1_raw))
+#Reformed data frame
+BC_data=data.frame(X1,y)
+kable(head(BC_data)[,1:5],caption="Top 6 rows of Breast Cancer data")
+kable(head(BC_data)[,6:9],caption="Top 6 rows of Breast Cancer data")
+# Store n and p
+n = nrow(BC_data)
+p = ncol(BC_data) - 1
+```
+  
+The data has been modified to include the only the 9 predictor and response variable. Rows that contained missing values were omitted. The data now contains 683 tissue samples
+
+# Graphical Summary
+```{r Scatter plot, echo=FALSE}
+#Scatter plot
+pairs(MyData[,1:9],col=MyData[,10]+1)
+```
+  
+For almost all variables the ratings given for benign is lower suggesting that those samples are healthier. There is a linear correlation between `Cell.size` and `Cell.shape`,suggesting that the bigger the cell size the more irregular the cell shape.
+
+# Numerical Summary
+```{r Benign means,echo=FALSE}
+library(dplyr)
+#Variable means of benign samples 
+kable(MyData %>% filter(MyData$Class==0) %>% colMeans(),caption= "Benign sample means")
+```
+### Malignant Sample means 
+```{r Malignant means, echo=FALSE}
+#Variable means of malignant samples
+kable(MyData %>% filter(MyData$Class==1) %>% colMeans(), caption= "Malignant sample means")
+```
+The means for all the predictor variables with malignant samples are higher than the means for benign samples. This suggests that malignant cells are very unhealthy looking and rogue 
+
+## Measure of Scatter
+```{r Measure of scatter,echo=FALSE}
+#Since all the variables have been measured on a scale of 1-10 no need for standardization of data 
+v=var(MyData[,1:9])
+kable(diag(v),caption="Variance by columns")
+```
+Bare.nuclei is highly spread compared to the other variables. Mitoses has the smallest variance suggesting that it is more centered around the mean compared to the other variables
+
+### Correlation matrix
+```{r cor,echo=FALSE}
+#Correlation Matrix - quantify the strength 
+kable(cor(MyData[,1:9])[,1:4],caption="Correlation matrix")
+kable(cor(MyData[,1:9])[,5:9],caption="Correlation matrix")
+```
+  
+This matrix quantifies the strength of the relationship between the covariates. `Cell.size` and `Cell.shape` are highly correlated (0.907). One of these variables could be eliminated to avoid collinearity.  
+
+### Covariance matrix of standardized data
+```{r cor standardize,echo=FALSE}
+#Covariance matrix of standardized data
+kable(as.data.frame(var(X1))[,1:4],caption="Correlation matrix of standardized data")
+kable(as.data.frame(var(X1))[,5:9],caption="Correlation matrix of standardized data")
+```
+
+Standardized data covariance matrix is the same as correlation matrix of original data  
+
+## Classifiers
+### 1. Best Subset Selection of Logistic Regression Classifier
+Best subset selection is used with two model comparison criterions (AIC and BIC) to select the best subset model. The aim is to select the model with variables that gives a good compromise between the mdoel with smallest AIC and model with smallest BIC
+```{r BSS 1,include=FALSE}
+#Apply best subset selection
+bss_fit_AIC=bestglm(BC_data, family=binomial, IC="AIC")
+bss_fit_BIC=bestglm(BC_data, family=binomial, IC="BIC")
+
+#Examining results
+bss_fit_AIC$Subsets
+(best_AIC=bss_fit_AIC$ModelReport$Bestk)
+
+bss_fit_BIC$Subsets
+(best_BIC=bss_fit_BIC$ModelReport$Bestk)
+```
+```{r BSS plot, echo=FALSE}
+# Create multi-panel plotting device
+par(mfrow=c(1,2))
+## Produce plots, highlighting optimal value of k
+plot(0:p, bss_fit_AIC$Subsets$AIC, xlab="Number of predictors", ylab="AIC", type="b") 
+points(best_AIC, bss_fit_AIC$Subsets$AIC[best_AIC+1], col="red", pch=16)
+plot(0:p, bss_fit_BIC$Subsets$BIC, xlab="Number of predictors", ylab="BIC", type="b")
+points(best_BIC, bss_fit_BIC$Subsets$BIC[best_BIC+1], col="red", pch=16)
+#Resetting panel
+par(mfrow=c(1,1))
+```
+  
+Model with 6 predictor variables looks like a good compromise
+
+### Model with 6 predictor variables is selected
+The predictors variables selected are `Cl.thickness`, `Cell.shape` ,`Marg.adhesion` , `Bare.nuclei` , `Bl.chromatin` , `Normal.nucleoli`
+```{r select BSS,include=FALSE}
+#Selecting best model
+pstar=6
+#Check which predictors are in the 6 predictor model
+bss_fit_AIC$Subsets[pstar+1,]
+#Construct a reduced data set containing only the selected predictor
+(indices=as.logical(bss_fit_AIC$Subsets[pstar+1,2:(p+1)]))
+BC_data_red = data.frame(X1[,indices], y)
+```
+```{r Regression coefficients,echo=FALSE}
+#Obtain regression coefficients for this model
+glm_fit=glm(y~.,data=BC_data_red,family="binomial")
+summary_reg = summary(glm_fit)
+kable(summary_reg[12],caption="Regression coefficients")
+```
+
+All the regression coefficients for the subset with 6 predictor variables show significance
+
+## K-fold Cross validation to calculate out of sample misclassification error
+K=10 and the`fold_index` used is the same for all the K-fold cross validation going forward for fair comparison across classifiers. 
+```{r K-fold BSS,include=FALSE}
+#K-fold cross validation
+#Allow results to be reproducible
+set.seed(1,sample.kind = "Rounding")
+
+#randomly divide data into k=10 folds
+nfolds=10
+#sample fold-assignment index
+fold_index = sample(nfolds, n, replace=TRUE)
+#print first few fold-assignments
+head(fold_index)
+
+#Function to estimate average misclassification error by general K-fold cross validation
+reg_cv = function(X1, y, fold_ind) {
+  Xy = data.frame(X1, y=y)
+  nfolds = max(fold_ind)
+  if(!all.equal(sort(unique(fold_ind)), 1:nfolds)) stop("Invalid fold partition.") 
+  cv_errors = numeric(nfolds)
+  for(fold in 1:nfolds) {
+    tmp_fit = glm(y ~ ., data=Xy[fold_ind!=fold,],family="binomial") 
+    phat = predict(tmp_fit, Xy[fold_ind==fold,],type="response") 
+    yhat= ifelse(phat>0.5,1,0)
+    yobs = y[fold_ind==fold]
+    cv_errors[fold] = 1- mean(yobs==yhat)
+  }
+  fold_sizes = numeric(nfolds)
+  for(fold in 1:nfolds) fold_sizes[fold] = length(which(fold_ind==fold))
+  test_error = weighted.mean(cv_errors, w=fold_sizes)
+  return(test_error)
+}
+```
+### Misclassifcation error for Best Subset with 6 predictor variables using Logistic Regression
+```{r BSS test error,echo=FALSE}
+#Test error for Model with 6 variables using logistic regression
+(test_error_BSS=reg_cv(X1[,indices], y,fold_index))
+```
+
+
+## Regularized logistic regression with LASSO penalty
+LASSO penalty is applied to the logistic regression model with all the variables to perform covariate selection.
+```{r LASSO,include=FALSE}
+library(glmnet)# Load the glmnet package
+# Choosing grid of values for the tuning parameter
+grid = 10^seq(-4,1, length.out=100)
+# Fitting a model with LASSO penalty for each value of the tuning parameter
+lasso_fit = glmnet(X1, y, family="binomial", alpha=1, standardize=FALSE, lambda=grid)
+```
+```{r LASSO plot,echo=FALSE}
+# Examine the effect of the tuning parameter on the parameter estimates
+plot(lasso_fit, xvar="lambda", col=rainbow(p), label=TRUE)
+```
+  
+From the plot it can be observed that as the lambda increases the coefficients shrink to 0. The optimum lambda will be selected using cross validation with the same `fold_index`  
+
+### K-fold Cross Validation Misclassification Error plot
+```{r LASSO Cross validation,echo=FALSE,fig.align='left'}
+#To select a single value for the tuning parameter and perform K-fold cross-validation
+lasso_cv_fit = cv.glmnet(X1, y, family="binomial", alpha=1, standardize=FALSE, lambda=grid, type.measure="class",foldid = fold_index )
+plot(lasso_cv_fit) #Cross validation scores
+```
+### Optimum value of lambda
+```{r LASSO lambda, echo=FALSE}
+# Identifying the optimal value for the tuning parameter
+(lambda_lasso_min = lasso_cv_fit$lambda.min)
+which_lambda_lasso = which(lasso_cv_fit$lambda == lambda_lasso_min)
+```
+
+### The LASSO penalty coefficients for optimum value of lambda
+```{r LASSO coefs,echo=FALSE}
+# The parameter estimates associated with optimal value of the tuning parameter 
+LASSO_coef = coef(lasso_fit, s=lambda_lasso_min)
+LASSO_coef = as.matrix(LASSO_coef)
+kable(as.data.frame(LASSO_coef),caption="Coefficients with LASSO ")
+```
+None of the variables were eliminated as none shrunk to zero completely. Therefore we will perform ridge regression and test which model has lower test error.  
+
+###  Misclassifcation error Logistic Regression with LASSO penalty
+```{r Test error LASSO,echo=FALSE}
+#Test error for LASSO
+(test_error_LASSO=lasso_cv_fit$cvm[which_lambda_lasso])
+```
+
+## Regularized logistic regression with Ridge penalty
+```{r Ridge fit,include=FALSE}
+# Choosing grid of values for the tuning parameter
+grid2 = 10^seq(5,-3, length.out=100)
+# Fitting a model with LASSO penalty for each value of the tuning parameter
+ridge_fit = glmnet(X1, y, family="binomial", alpha=0, standardize=FALSE, lambda=grid2)
+```
+```{r Ridge plot,echo=FALSE}
+#Examine the effect of the tuning parameter on the parameter estimates
+plot(ridge_fit, xvar="lambda", col=rainbow(p), label=TRUE)
+```
+  
+From the plot it can be observed that as the lambda increases the coefficients shrink to 0. The optimum lambda will be selected using cross validation with the same `fold_index`  
+
+### K-fold Cross Validation Misclassification Error plot for Ridge regression
+```{r Ridge cross validation,echo=FALSE,fig.align='left'}
+#To select a single value for the tuning parameter
+ridge_cv_fit = cv.glmnet(X1, y, family="binomial", alpha=0, standardize=FALSE, lambda=grid,type.measure="class",foldid = fold_index)
+plot(ridge_cv_fit)
+```
+### Optimum value of lambda
+```{r Optimum lambda Ridge,echo=FALSE}
+# Identify the optimal value for the tuning parameter
+(lambda_ridge_min = ridge_cv_fit$lambda.min)
+which_lambda_ridge = which(ridge_cv_fit$lambda == lambda_ridge_min)
+```
+### The Ridge penalty coefficients for the optimum value of lambda
+```{r Ridge coeff,echo=FALSE}
+# Find the parameter estimates associated with optimal value of the tuning parameter 
+Ridge_coeff= coef(ridge_fit, s=lambda_ridge_min)
+Ridge_coeff = as.matrix(Ridge_coeff)
+kable(Ridge_coeff,caption="Coefficient of Ridge")
+```
+###  Misclassifcation error Logistic Regression with Ridge penalty
+```{r Test error Ridge,echo=FALSE}
+#Test error Ridge Regression
+(test_error_ridge=ridge_cv_fit$cvm[which_lambda_ridge])
+```
+##  Linear Discriminant Analysis 
+LDA is performed on the 6 significant variables selected through Best Subset selection.
+```{r LDA, echo=FALSE}
+#Perform LDA on dat with 6 variables significant variables from best subset selection 
+lda_fit=lda(y~.,data=BC_data_red)
+kable(lda_fit[3],caption="LDA group means") 
+```
+  
+The estimated group means for the benign tissue sample variables are much lower than the malignant tissue samples. 
+
+## Misclassification Error for LDA
+Misclassification error is calculated using K-fold cross validation with K=10 and the same `fold_index`
+```{r LDA test error, echo=FALSE}
+#Function to estimate average misclassification error by general K-fold cross validation
+lda_cv = function(X1, y, fold_ind) {
+  Xy = data.frame(X1, y=y)
+  nfolds = max(fold_ind)
+  if(!all.equal(sort(unique(fold_ind)), 1:nfolds)) stop("Invalid fold partition.") 
+  cv_errors = numeric(nfolds)
+  for(fold in 1:nfolds) {
+    tmp_fit = lda(y ~ ., data=Xy[fold_ind!=fold,]) 
+    lda_test = predict(tmp_fit, Xy[fold_ind==fold,]) 
+    yhat= lda_test$class
+    yobs = y[fold_ind==fold]
+    cv_errors[fold] = 1- mean(yobs==yhat)
+  }
+  fold_sizes = numeric(nfolds)
+  for(fold in 1:nfolds) fold_sizes[fold] = length(which(fold_ind==fold))
+  test_error = weighted.mean(cv_errors, w=fold_sizes)
+  return(test_error)
+}
+#Test error for Model with 6 variables with LDA
+(test_error_lda=lda_cv(X1[,indices], y,fold_index))
+
+```
+## Quadratic Discriminant Analysis 
+QDA is performed on the 6 significant variables selected through Best Subset selection.The test error will be compared to LDA.
+```{r QDA,echo=FALSE}
+#Perform QDA on data with 6 variables significant variables from best subset selection 
+qda_fit=qda(y~.,data=BC_data_red)
+kable(qda_fit[3],caption="QDA group means")
+```
+  
+The estimated group means for the benign tissue sample variables are much lower than the malignant tissue samples. 
+
+## Misclassification Error for QDA
+Misclassification error is calculated using K-fold cross validation with K=10 and the same `fold_index`
+```{r QDA test error,echo=FALSE}
+#Function to estimate average misclassification error by general K-fold cross validation
+qda_cv = function(X1, y, fold_ind) {
+  Xy = data.frame(X1, y=y)
+  nfolds = max(fold_ind)
+  if(!all.equal(sort(unique(fold_ind)), 1:nfolds)) stop("Invalid fold partition.") 
+  cv_errors = numeric(nfolds)
+  for(fold in 1:nfolds) {
+    tmp_fit = qda(y ~ ., data=Xy[fold_ind!=fold,]) 
+    qda_test = predict(tmp_fit, Xy[fold_ind==fold,]) 
+    yhat= qda_test$class
+    yobs = y[fold_ind==fold]
+    cv_errors[fold] = 1- mean(yobs==yhat)
+  }
+  fold_sizes = numeric(nfolds)
+  for(fold in 1:nfolds) fold_sizes[fold] = length(which(fold_ind==fold))
+  test_error = weighted.mean(cv_errors, w=fold_sizes)
+  return(test_error)
+}
+#Test error for Model with 6 variables with LDA
+(test_error_qda=qda_cv(X1[,indices], y,fold_index))
+```
+
+## Test errors using K-fold crossvalidation
+The test errors have been computed using K=10 with the same `fold_index`
+```{r test errors}
+df=data.frame(Model=c("BSS","LASSO","Ridge","LDA","QDA"),Test_errors=c(test_error_BSS,test_error_LASSO,test_error_ridge,test_error_lda,test_error_qda))
+kable(df,caption="Test errors of models")
+
+```
+
+
+## Conclusion
+The classifier that is selected is the logistic regression model with ridge penalty using all the variables as predictors because it has the lowest missclassification error. 
+
